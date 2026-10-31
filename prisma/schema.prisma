@@ -1,0 +1,39 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+} 
+
+model Event {
+  id        String   @id @default(uuid())
+  title     String
+  date      DateTime
+  location  String
+  createdAt DateTime @default(now())
+}
+
+model Activity {
+  id          String   @id @default(uuid())
+  description String
+  timeAgo     String
+  createdAt   DateTime @default(now())
+}
+
+model Member {
+  id        String   @id @default(uuid())
+  name      String
+  email     String   @unique
+  role      String
+  createdAt DateTime @default(now())
+}
+
+model Scale {
+  id          String   @id @default(uuid())
+  ministry    String
+  date        DateTime
+  volunteer   String
+  createdAt   DateTime @default(now())
+}
