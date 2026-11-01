@@ -1,26 +1,29 @@
-# IEQ Cachoeira
+# IEQ Cachoeira API
 
-Painel web de gestão e cuidado da comunidade, desenvolvido com React e Create React App.
+API HTTP da aplicação IEQ Cachoeira, construída com Express, Prisma e PostgreSQL.
 
-## Executar localmente
+## Configuração local
 
-```powershell
-npm install
-Copy-Item .env.example .env
-npm start
-```
+1. Instale as dependências: `npm install`.
+2. Copie `.env.example` para `.env` e informe a `DATABASE_URL` do PostgreSQL.
+3. Crie as tabelas e gere o Prisma Client:
 
-O arquivo `.env.example` define `VITE_API_URL`. O script de desenvolvimento/build adapta essa variável ao formato `REACT_APP_API_URL` exigido pelo Create React App. Também é possível definir `REACT_APP_API_URL` diretamente.
+   ```powershell
+npx prisma migrate deploy
+npx prisma generate
+   ```
 
-## API
+4. Inicie o servidor com `npm start` (porta `10000` por padrão; use `PORT` para substituí-la).
 
-A URL padrão é `https://backend-projectieqcachoeira.onrender.com`. O serviço em `src/services/api.js` centraliza as chamadas para membros, eventos, atividades, escalas, triagem social, cursos, vagas e resumo financeiro. As rotas REST esperadas estão definidas nesse arquivo; ajuste-as ali caso o backend use caminhos diferentes.
+Use `npm run dev` durante o desenvolvimento, `npm test` para executar os testes HTTP e `npm run prisma:validate` para validar o schema.
 
-Quando a API estiver indisponível, o painel informa o erro e mantém dados demonstrativos para permitir a navegação. Listas vazias retornadas pela API são apresentadas como estados vazios.
+No Render, conecte o repositório `backend-projectieqcachoeira`; use `npm install && npm run build` como comando de build e `npm start` como comando de inicialização. Configure `DATABASE_URL` nas variáveis do serviço. A migração precisa ser aplicada ao banco de destino com `npx prisma migrate deploy`; ela não é executada automaticamente pelo servidor.
 
-## Verificação
+## Endpoints
 
-```powershell
-npm test -- --watchAll=false
-npm run build
-```
+- `GET /events` — eventos em ordem crescente de data.
+- `POST /events` — cria um evento com `title`, `date` e `location`.
+- `GET /activities` — até 10 atividades, da mais recente para a mais antiga.
+- `POST /activities` — cria uma atividade com `description` e `timeAgo`.
+
+Os endpoints de criação validam os campos obrigatórios e respondem com `400` quando os dados são inválidos. Erros de banco são registrados pelo servidor e respondidos com `500`.

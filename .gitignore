@@ -2,6 +2,7 @@
 
 # dependencies
 /node_modules
+.neon
 
 # Yarn PnP (apenas se usar)
 .pnp
