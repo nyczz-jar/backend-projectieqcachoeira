@@ -1,6 +1,6 @@
 require('dotenv').config();
 
-const { createApp } = require('../../src/app');
+const { createApp } = require('./app');
 const prisma = require('./lib/prisma');
 
 const port = Number(process.env.PORT) || 10000;
