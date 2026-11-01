@@ -118,46 +118,60 @@ function createApp(prismaClient = prisma) {
     return res.status(500).json({ error: 'Ocorreu um erro interno no servidor.' });
   });
 
-  // --- ROTAS DE MEMBROS ---
-app.get('/members', async (_req, res) => {
-  try {
-    const members = await prismaClient.member.findMany({ orderBy: { name: 'asc' } });
-    res.json(members);
-  } catch (error) {
-    res.status(500).json({ error: 'Não foi possível buscar os membros.' });
-  }
-});
+  // --- ROTAS DE MEMBROS --- //
+  app.get('/members', async (_req, res) => {
+    try {
+      const members = await prismaClient.member.findMany({ orderBy: { name: 'asc' } });
+      res.json(members);
+    } catch (error) {
+      res.status(500).json({ error: 'Não foi possível buscar os membros.' });
+    } 
+  });
 
-app.post('/members', async (req, res) => {
-  try {
-    const { name, email, role } = req.body;
-    const member = await prismaClient.member.create({ data: { name, email, role } });
-    res.status(201).json(member);
-  } catch (error) {
-    res.status(500).json({ error: 'Não foi possível criar o membro.' });
-  }
-});
+  app.post('/members', async (req, res) => {
+    try {
+      const { name, email, role } = req.body;
+      const member = await prismaClient.member.create({ data: { name, email, role } });
+      res.status(201).json(member);
+    } catch (error) {
+      res.status(500).json({ error: 'Não foi possível criar o membro.' });
+    }
+  });
 
-// --- ROTAS DE ESCALAS ---
-app.get('/scales', async (_req, res) => {
-  try {
-    const scales = await prismaClient.scale.findMany({ orderBy: { date: 'asc' } });
-    res.json(scales);
-  } catch (error) {
-    res.status(500).json({ error: 'Não foi possível buscar as escalas.' });
-  }
-});
+  // --- ROTAS DE ESCALAS --- //
+  app.get('/scales', async (_req, res) => {
+    try {
+      const scales = await prismaClient.scale.findMany({ orderBy: { date: 'asc' } });
+      res.json(scales);
+    } catch (error) {
+      res.status(500).json({ error: 'Não foi possível buscar as escalas.' });
+    }
+  });
 
-app.post('/scales', async (req, res) => {
+  app.post('/scales', async (req, res) => {
+    try {
+      const { ministry, date, volunteer } = req.body;
+      const scale = await prismaClient.scale.create({ data: { ministry, date: new Date(date), volunteer } });
+      res.status(201).json(scale);
+    } catch (error) {
+      res.status(500).json({ error: 'Não foi possível criar a escala.' });
+    }
+  });
+  
+  // --- TRIAGEM SOCIAL --- //
+  app.get('/social-riage', async (_req, res) => {
   try {
-    const { ministry, date, volunteer } = req.body;
-    const scale = await prismaClient.scale.create({ data: { ministry, date: new Date(date), volunteer } });
-    res.status(201).json(scale);
+    const cases = await prismaClient.socialCase.findMany({ orderBy: { createdAt: 'desc' } });
+    res.json(cases);
   } catch (error) {
-    res.status(500).json({ error: 'Não foi possível criar a escala.' });
+    res.status(500).json({ error: 'Não foi possível buscar os casos de triagem.' });
   }
-});
+  });
   return app;
 }
+
+
+
+
 
 module.exports = { createApp };
