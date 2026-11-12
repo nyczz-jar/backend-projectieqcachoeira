@@ -25,5 +25,9 @@ No Render, conecte o repositório `backend-projectieqcachoeira`; use `npm instal
 - `POST /events` — cria um evento com `title`, `date` e `location`.
 - `GET /activities` — até 10 atividades, da mais recente para a mais antiga.
 - `POST /activities` — cria uma atividade com `description` e `timeAgo`.
+- `GET /finance/summary?month=YYYY-MM` — retorna entradas, saídas, saldo, total de ações sociais e as 100 movimentações mais recentes do mês. Sem `month`, usa o mês atual em UTC.
+- `POST /finance/transactions` — registra uma transação com `tipo` (`entrada` ou `saida`), `descricao`, `categoria`, `valor` positivo e `data` ISO opcional (padrão: agora).
 
 Os endpoints de criação validam os campos obrigatórios e respondem com `400` quando os dados são inválidos. Erros de banco são registrados pelo servidor e respondidos com `500`.
+
+Depois de implantar uma nova migration, aplique-a ao banco de destino com `npx prisma migrate deploy` antes de iniciar a versão que usa o modelo `Transacao`.

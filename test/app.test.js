@@ -7,6 +7,15 @@ let server;
 let baseUrl;
 let failDatabaseRequests = false;
 const calls = [];
+const financialTransaction = {
+  id: 1,
+  tipo: 'entrada',
+  descricao: 'Oferta de domingo',
+  categoria: 'Contribuições',
+  valor: 2450,
+  data: new Date('2026-10-26T18:00:00.000Z'),
+  createdAt: new Date('2026-10-26T18:00:00.000Z'),
+};
 
 const prisma = {
   event: {
@@ -31,6 +40,27 @@ const prisma = {
       if (failDatabaseRequests) throw new Error('Database unavailable');
       calls.push(['activity.create', data]);
       return { id: 'activity-2', ...data };
+    },
+  },
+  transacao: {
+    groupBy: async (args) => {
+      if (failDatabaseRequests) throw new Error('Database unavailable');
+      calls.push(['transacao.groupBy', args]);
+      return [
+        { tipo: 'entrada', categoria: 'Contribuições', _sum: { valor: 6570 } },
+        { tipo: 'saida', categoria: 'Ação Social', _sum: { valor: 680 } },
+        { tipo: 'saida', categoria: 'Manutenção', _sum: { valor: 215 } },
+      ];
+    },
+    findMany: async (args) => {
+      if (failDatabaseRequests) throw new Error('Database unavailable');
+      calls.push(['transacao.findMany', args]);
+      return [financialTransaction];
+    },
+    create: async ({ data }) => {
+      if (failDatabaseRequests) throw new Error('Database unavailable');
+      calls.push(['transacao.create', data]);
+      return { id: 2, ...data, createdAt: new Date('2026-10-27T12:00:00.000Z') };
     },
   },
 };
@@ -103,6 +133,92 @@ test('POST /activities returns the created activity', async () => {
   assert.equal(activity.description, 'Novo membro cadastrado');
   assert.equal(activity.timeAgo, 'agora');
   assert.deepEqual(calls[0], ['activity.create', { description: 'Novo membro cadastrado', timeAgo: 'agora' }]);
+});
+
+test('GET /finance/summary consolidates a requested month and returns frontend transactions', async () => {
+  calls.length = 0;
+  const response = await fetch(`${baseUrl}/finance/summary?month=2026-10`);
+  const summary = await response.json();
+
+  assert.equal(response.status, 200);
+  assert.deepEqual(
+    { income: summary.income, expenses: summary.expenses, balance: summary.balance, socialActions: summary.socialActions },
+    { income: 6570, expenses: 895, balance: 5675, socialActions: 680 },
+  );
+  assert.deepEqual(summary.transactions[0], {
+    id: 1,
+    title: 'Oferta de domingo',
+    category: 'Contribuições',
+    date: '2026-10-26T18:00:00.000Z',
+    amount: 2450,
+    type: 'in',
+  });
+  assert.deepEqual(calls[0][1].where, {
+    data: { gte: new Date('2026-10-01T00:00:00.000Z'), lt: new Date('2026-11-01T00:00:00.000Z') },
+  });
+  assert.deepEqual(calls[1][1].orderBy, { data: 'desc' });
+  assert.equal(calls[1][1].take, 100);
+});
+
+test('GET /finance/summary rejects malformed month filters', async () => {
+  const response = await fetch(`${baseUrl}/finance/summary?month=2026-13`);
+
+  assert.equal(response.status, 400);
+  assert.match((await response.json()).error, /YYYY-MM/);
+});
+
+test('POST /finance/transactions validates and persists a transaction', async () => {
+  calls.length = 0;
+  const response = await fetch(`${baseUrl}/finance/transactions`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      tipo: ' saida ',
+      descricao: '  Cestas básicas ',
+      categoria: ' Ação Social ',
+      valor: 680,
+      data: '2026-10-24T12:00:00.000Z',
+    }),
+  });
+  const transaction = await response.json();
+
+  assert.equal(response.status, 201);
+  assert.equal(transaction.id, 2);
+  assert.equal(transaction.tipo, 'saida');
+  assert.equal(transaction.descricao, 'Cestas básicas');
+  assert.equal(transaction.categoria, 'Ação Social');
+  assert.equal(transaction.valor, 680);
+  assert.equal(calls[0][0], 'transacao.create');
+  assert.equal(calls[0][1].data.toISOString(), '2026-10-24T12:00:00.000Z');
+});
+
+test('POST /finance/transactions rejects invalid fields and amounts', async () => {
+  const response = await fetch(`${baseUrl}/finance/transactions`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ tipo: 'transferencia', descricao: 'Teste', categoria: 'Geral', valor: -10, data: 'invalid' }),
+  });
+
+  assert.equal(response.status, 400);
+  assert.match((await response.json()).error, /valor positivo/);
+});
+
+test('financial database errors return a generic HTTP 500 response', async () => {
+  const originalConsoleError = console.error;
+  console.error = () => {};
+  failDatabaseRequests = true;
+
+  try {
+    const response = await fetch(`${baseUrl}/finance/summary?month=2026-10`);
+    const body = await response.json();
+
+    assert.equal(response.status, 500);
+    assert.equal(body.error, 'Não foi possível buscar o resumo financeiro.');
+    assert.doesNotMatch(JSON.stringify(body), /Database unavailable/);
+  } finally {
+    failDatabaseRequests = false;
+    console.error = originalConsoleError;
+  }
 });
 
 test('database failures return HTTP 500 without exposing internal errors', async () => {

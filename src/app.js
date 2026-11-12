@@ -101,23 +101,6 @@ function createApp(prismaClient = prisma) {
     }
   });
 
-  app.use((req, res) => {
-    res.status(404).json({ error: `Rota não encontrada: ${req.method} ${req.path}` });
-  });
-
-  app.use((error, _req, res, _next) => {
-    if (error.type === 'entity.parse.failed') {
-      return res.status(400).json({ error: 'O corpo da requisição não contém JSON válido.' });
-    }
-
-    if (error.type === 'entity.too.large') {
-      return res.status(413).json({ error: 'O corpo da requisição excede o limite permitido.' });
-    }
-
-    console.error('[HTTP] Unhandled request error:', error);
-    return res.status(500).json({ error: 'Ocorreu um erro interno no servidor.' });
-  });
-
   // --- ROTAS DE MEMBROS --- //
   app.get('/members', async (_req, res) => {
     try {
@@ -157,6 +140,115 @@ function createApp(prismaClient = prisma) {
       res.status(500).json({ error: 'Não foi possível criar a escala.' });
     }
   });
+
+  // --- ROTAS FINANCEIRAS --- //
+  app.get('/finance/summary', async (req, res) => {
+    const month = req.query.month;
+    let startDate;
+    if (month === undefined) {
+      const now = new Date();
+      startDate = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
+    } else {
+      const match = typeof month === 'string' && month.match(/^(\d{4})-(\d{2})$/);
+      if (!match || Number(match[2]) < 1 || Number(match[2]) > 12) {
+        return res.status(400).json({ error: 'Informe o mês no formato YYYY-MM.' });
+      }
+      startDate = new Date(Date.UTC(Number(match[1]), Number(match[2]) - 1, 1));
+    }
+
+    const endDate = new Date(Date.UTC(startDate.getUTCFullYear(), startDate.getUTCMonth() + 1, 1));
+    const where = { data: { gte: startDate, lt: endDate } };
+
+    try {
+      const [totalsByCategory, transactions] = await Promise.all([
+        prismaClient.transacao.groupBy({
+          by: ['tipo', 'categoria'],
+          where,
+          _sum: { valor: true },
+        }),
+        prismaClient.transacao.findMany({
+          where,
+          orderBy: { data: 'desc' },
+          take: 100,
+        }),
+      ]);
+
+      const summary = totalsByCategory.reduce((result, item) => {
+        const total = item._sum.valor || 0;
+        if (item.tipo === 'entrada') result.income += total;
+        if (item.tipo === 'saida') {
+          result.expenses += total;
+          if (/ação social/i.test(item.categoria)) result.socialActions += total;
+        }
+        return result;
+      }, { income: 0, expenses: 0, socialActions: 0 });
+
+      return res.json({
+        ...summary,
+        balance: summary.income - summary.expenses,
+        transactions: transactions.map((transaction) => ({
+          id: transaction.id,
+          title: transaction.descricao,
+          category: transaction.categoria,
+          date: transaction.data,
+          amount: transaction.valor,
+          type: transaction.tipo === 'saida' ? 'out' : 'in',
+        })),
+      });
+    } catch (error) {
+      console.error('[GET /finance/summary] Failed to fetch financial summary:', error);
+      return res.status(500).json({ error: 'Não foi possível buscar o resumo financeiro.' });
+    }
+  });
+
+  app.post('/finance/transactions', async (req, res) => {
+    const body = req.body || {};
+    const tipo = typeof body.tipo === 'string' ? body.tipo.trim().toLowerCase() : '';
+    const descricao = typeof body.descricao === 'string' ? body.descricao.trim() : '';
+    const categoria = typeof body.categoria === 'string' ? body.categoria.trim() : '';
+    const valor = typeof body.valor === 'number'
+      ? body.valor
+      : typeof body.valor === 'string' && body.valor.trim()
+        ? Number(body.valor)
+        : Number.NaN;
+    const data = body.data === undefined
+      ? new Date()
+      : typeof body.data === 'string'
+        ? new Date(body.data)
+        : new Date(Number.NaN);
+
+    if (
+      !['entrada', 'saida'].includes(tipo)
+      || !descricao
+      || !categoria
+      || !Number.isFinite(valor)
+      || valor <= 0
+      || Number.isNaN(data.getTime())
+    ) {
+      return res.status(400).json({
+        error: 'Informe tipo (entrada ou saida), descrição, categoria, valor positivo e data válida.',
+      });
+    }
+
+    try {
+      const transaction = await prismaClient.transacao.create({
+        data: { tipo, descricao, categoria, valor, data },
+      });
+
+      return res.status(201).json({
+        id: transaction.id,
+        tipo: transaction.tipo,
+        descricao: transaction.descricao,
+        categoria: transaction.categoria,
+        valor: transaction.valor,
+        data: transaction.data,
+        createdAt: transaction.createdAt,
+      });
+    } catch (error) {
+      console.error('[POST /finance/transactions] Failed to create transaction:', error);
+      return res.status(500).json({ error: 'Não foi possível registrar a movimentação financeira.' });
+    }
+  });
   
   // --- TRIAGEM SOCIAL --- //
   app.get('/social-riage', async (_req, res) => {
@@ -167,6 +259,24 @@ function createApp(prismaClient = prisma) {
     res.status(500).json({ error: 'Não foi possível buscar os casos de triagem.' });
   }
   });
+
+  app.use((req, res) => {
+    res.status(404).json({ error: `Rota não encontrada: ${req.method} ${req.path}` });
+  });
+
+  app.use((error, _req, res, _next) => {
+    if (error.type === 'entity.parse.failed') {
+      return res.status(400).json({ error: 'O corpo da requisição não contém JSON válido.' });
+    }
+
+    if (error.type === 'entity.too.large') {
+      return res.status(413).json({ error: 'O corpo da requisição excede o limite permitido.' });
+    }
+
+    console.error('[HTTP] Unhandled request error:', error);
+    return res.status(500).json({ error: 'Ocorreu um erro interno no servidor.' });
+  });
+
   return app;
 }
 
