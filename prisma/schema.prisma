@@ -23,11 +23,12 @@ model Activity {
 }
 
 model Member {
-  id        String   @id @default(uuid())
-  name      String
-  email     String   @unique
-  role      String
-  createdAt DateTime @default(now())
+  id           String          @id @default(uuid())
+  name         String
+  email        String          @unique
+  role         String
+  createdAt    DateTime        @default(now())
+  socialTriages TriagemSocial[]
 }
 
 model Scale {
@@ -48,4 +49,48 @@ model Transacao {
   createdAt DateTime @default(now())
 
   @@index([data])
+}
+
+model TriagemSocial {
+  id                   Int      @id @default(autoincrement())
+  membroId             String
+  membro               Member   @relation(fields: [membroId], references: [id], onDelete: Restrict)
+  dataTriagem          DateTime @default(now())
+  demandas             String
+  notas                String?
+  statusEncaminhamento String   @default("Pendente")
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+
+  @@index([membroId])
+  @@index([statusEncaminhamento])
+  @@index([createdAt])
+}
+
+model CursoLocal {
+  id              Int      @id @default(autoincrement())
+  nome            String
+  categoria       String?
+  descricao       String
+  dataInicio      DateTime?
+  dataTermino     DateTime?
+  statusAprovacao String   @default("Pendente")
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([statusAprovacao, createdAt])
+}
+
+model VagaEmprego {
+  id              Int      @id @default(autoincrement())
+  titulo          String
+  empresa         String?
+  descricao       String
+  requisitos      String
+  dataPublicacao  DateTime @default(now())
+  statusAprovacao String   @default("Pendente")
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([statusAprovacao, dataPublicacao])
 }

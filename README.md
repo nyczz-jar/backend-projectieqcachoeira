@@ -27,7 +27,12 @@ No Render, conecte o repositório `backend-projectieqcachoeira`; use `npm instal
 - `POST /activities` — cria uma atividade com `description` e `timeAgo`.
 - `GET /finance/summary?month=YYYY-MM` — retorna entradas, saídas, saldo, total de ações sociais e as 100 movimentações mais recentes do mês. Sem `month`, usa o mês atual em UTC.
 - `POST /finance/transactions` — registra uma transação com `tipo` (`entrada` ou `saida`), `descricao`, `categoria`, `valor` positivo e `data` ISO opcional (padrão: agora).
+- `GET /social-triage` — lista triagens recentes com o nome do membro relacionado; `/social-riage` permanece como alias legado.
+- `POST /social-triage` — cria triagem vinculada a `memberId`/`membroId`, com `demand`/`demandas`, notas opcionais e status inicial `Pendente`.
+- `PATCH /social-triage/:id` — atualiza notas e/ou o status (`Pendente`, `Em Atendimento`, `Encaminhado`, `Concluído`).
+- `GET /courses` e `POST /courses` — lista e cadastra cursos locais pendentes de aprovação.
+- `GET /jobs` e `POST /jobs` — lista e cadastra vagas pendentes de aprovação; título, descrição e requisitos são obrigatórios.
 
 Os endpoints de criação validam os campos obrigatórios e respondem com `400` quando os dados são inválidos. Erros de banco são registrados pelo servidor e respondidos com `500`.
 
-Depois de implantar uma nova migration, aplique-a ao banco de destino com `npx prisma migrate deploy` antes de iniciar a versão que usa o modelo `Transacao`.
+O relacionamento de triagem usa o campo `Member.id` existente (UUID/String), em vez de alterar a chave de membros persistidos para `Int`. Depois de implantar uma nova migration, aplique-a ao banco de destino com `npx prisma migrate deploy` antes de iniciar a versão que usa os novos modelos.

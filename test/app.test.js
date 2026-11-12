@@ -16,6 +16,40 @@ const financialTransaction = {
   data: new Date('2026-10-26T18:00:00.000Z'),
   createdAt: new Date('2026-10-26T18:00:00.000Z'),
 };
+const memberRecord = { id: 'member-uuid-1', name: 'Ana Oliveira', email: 'ana@example.com', role: 'Voluntário' };
+const socialCaseRecord = {
+  id: 1,
+  membroId: memberRecord.id,
+  membro: { name: memberRecord.name },
+  dataTriagem: new Date('2026-11-12T10:00:00.000Z'),
+  demandas: 'Apoio alimentar',
+  notas: null,
+  statusEncaminhamento: 'Pendente',
+  createdAt: new Date('2026-11-12T10:00:00.000Z'),
+  updatedAt: new Date('2026-11-12T10:00:00.000Z'),
+};
+const courseRecord = {
+  id: 1,
+  nome: 'Informática básica',
+  categoria: 'Tecnologia',
+  descricao: 'Curso para iniciantes',
+  dataInicio: new Date('2026-12-01T00:00:00.000Z'),
+  dataTermino: new Date('2026-12-15T00:00:00.000Z'),
+  statusAprovacao: 'Pendente',
+  createdAt: new Date('2026-11-12T10:00:00.000Z'),
+  updatedAt: new Date('2026-11-12T10:00:00.000Z'),
+};
+const jobRecord = {
+  id: 1,
+  titulo: 'Auxiliar administrativo',
+  empresa: 'Empresa local',
+  descricao: 'Atuação presencial.',
+  requisitos: 'Ensino médio completo.',
+  dataPublicacao: new Date('2026-11-12T10:00:00.000Z'),
+  statusAprovacao: 'Pendente',
+  createdAt: new Date('2026-11-12T10:00:00.000Z'),
+  updatedAt: new Date('2026-11-12T10:00:00.000Z'),
+};
 
 const prisma = {
   event: {
@@ -61,6 +95,59 @@ const prisma = {
       if (failDatabaseRequests) throw new Error('Database unavailable');
       calls.push(['transacao.create', data]);
       return { id: 2, ...data, createdAt: new Date('2026-10-27T12:00:00.000Z') };
+    },
+  },
+  member: {
+    findUnique: async ({ where }) => {
+      if (failDatabaseRequests) throw new Error('Database unavailable');
+      calls.push(['member.findUnique', where]);
+      return where.id === memberRecord.id ? memberRecord : null;
+    },
+  },
+  triagemSocial: {
+    findMany: async (args) => {
+      if (failDatabaseRequests) throw new Error('Database unavailable');
+      calls.push(['triagemSocial.findMany', args]);
+      return [socialCaseRecord];
+    },
+    create: async ({ data, include }) => {
+      if (failDatabaseRequests) throw new Error('Database unavailable');
+      calls.push(['triagemSocial.create', data, include]);
+      return { ...socialCaseRecord, ...data, membro: { name: memberRecord.name } };
+    },
+    update: async ({ where, data, include }) => {
+      if (failDatabaseRequests) throw new Error('Database unavailable');
+      calls.push(['triagemSocial.update', where, data, include]);
+      if (where.id !== socialCaseRecord.id) {
+        const error = new Error('Record not found');
+        error.code = 'P2025';
+        throw error;
+      }
+      return { ...socialCaseRecord, ...data, membro: { name: memberRecord.name } };
+    },
+  },
+  cursoLocal: {
+    findMany: async (args) => {
+      if (failDatabaseRequests) throw new Error('Database unavailable');
+      calls.push(['cursoLocal.findMany', args]);
+      return [courseRecord];
+    },
+    create: async ({ data }) => {
+      if (failDatabaseRequests) throw new Error('Database unavailable');
+      calls.push(['cursoLocal.create', data]);
+      return { ...courseRecord, ...data, statusAprovacao: 'Pendente' };
+    },
+  },
+  vagaEmprego: {
+    findMany: async (args) => {
+      if (failDatabaseRequests) throw new Error('Database unavailable');
+      calls.push(['vagaEmprego.findMany', args]);
+      return [jobRecord];
+    },
+    create: async ({ data }) => {
+      if (failDatabaseRequests) throw new Error('Database unavailable');
+      calls.push(['vagaEmprego.create', data]);
+      return { ...jobRecord, ...data };
     },
   },
 };
@@ -219,6 +306,184 @@ test('financial database errors return a generic HTTP 500 response', async () =>
     failDatabaseRequests = false;
     console.error = originalConsoleError;
   }
+});
+
+test('GET /social-triage includes the member display name without exposing unrelated member data', async () => {
+  calls.length = 0;
+  const response = await fetch(`${baseUrl}/social-triage`);
+  const cases = await response.json();
+
+  assert.equal(response.status, 200);
+  assert.equal(cases[0].name, memberRecord.name);
+  assert.equal(cases[0].demand, socialCaseRecord.demandas);
+  assert.equal(cases[0].status, 'Pendente');
+  assert.equal(cases[0].email, undefined);
+  assert.deepEqual(calls[0], ['triagemSocial.findMany', {
+    include: { membro: { select: { name: true } } },
+    orderBy: { createdAt: 'desc' },
+  }]);
+});
+
+test('POST /social-triage validates a member and creates a confidential case linked to it', async () => {
+  calls.length = 0;
+  const response = await fetch(`${baseUrl}/social-triage`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ memberId: memberRecord.id, demand: '  Apoio alimentar ', status: 'Pendente', confidential: true }),
+  });
+  const result = await response.json();
+
+  assert.equal(response.status, 201);
+  assert.equal(result.memberId, memberRecord.id);
+  assert.equal(result.name, memberRecord.name);
+  assert.equal(result.demand, 'Apoio alimentar');
+  assert.equal(result.status, 'Pendente');
+  assert.deepEqual(calls[0], ['member.findUnique', { id: memberRecord.id }]);
+  assert.equal(calls[1][0], 'triagemSocial.create');
+  assert.deepEqual(calls[1][1], {
+    membroId: memberRecord.id,
+    demandas: 'Apoio alimentar',
+    statusEncaminhamento: 'Pendente',
+  });
+});
+
+test('POST /social-triage rejects invalid members, demands, and statuses', async () => {
+  const response = await fetch(`${baseUrl}/social-triage`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ memberId: memberRecord.id, demand: ' ', status: 'Unknown' }),
+  });
+
+  assert.equal(response.status, 400);
+});
+
+test('PATCH /social-triage/:id updates status and private notes', async () => {
+  calls.length = 0;
+  const response = await fetch(`${baseUrl}/social-triage/1`, {
+    method: 'PATCH',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ statusEncaminhamento: 'Em Atendimento', notas: 'Retornar na próxima semana.' }),
+  });
+  const result = await response.json();
+
+  assert.equal(response.status, 200);
+  assert.equal(result.status, 'Em Atendimento');
+  assert.equal(result.notes, 'Retornar na próxima semana.');
+  assert.deepEqual(calls[0][2], {
+    statusEncaminhamento: 'Em Atendimento',
+    notas: 'Retornar na próxima semana.',
+  });
+});
+
+test('PATCH /social-triage/:id validates status and reports missing records', async () => {
+  const invalidResponse = await fetch(`${baseUrl}/social-triage/1`, {
+    method: 'PATCH',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ status: 'Status inválido' }),
+  });
+  assert.equal(invalidResponse.status, 400);
+
+  const missingResponse = await fetch(`${baseUrl}/social-triage/999`, {
+    method: 'PATCH',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ status: 'Concluído' }),
+  });
+  assert.equal(missingResponse.status, 404);
+});
+
+test('GET /courses returns API fields in the frontend format', async () => {
+  calls.length = 0;
+  const response = await fetch(`${baseUrl}/courses`);
+  const courses = await response.json();
+
+  assert.equal(response.status, 200);
+  assert.equal(courses[0].title, courseRecord.nome);
+  assert.equal(courses[0].category, courseRecord.categoria);
+  assert.equal(courses[0].status, 'Pendente');
+  assert.match(courses[0].dates, /01\/12\/2026/);
+  assert.deepEqual(calls[0], ['cursoLocal.findMany', { orderBy: { createdAt: 'desc' } }]);
+});
+
+test('POST /courses creates a pending course with optional dates', async () => {
+  calls.length = 0;
+  const response = await fetch(`${baseUrl}/courses`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      title: '  Curso de informática ',
+      category: ' Tecnologia ',
+      description: '  Noções básicas. ',
+      startDate: '2026-12-01T00:00:00.000Z',
+      endDate: '2026-12-15T00:00:00.000Z',
+    }),
+  });
+  const result = await response.json();
+
+  assert.equal(response.status, 201);
+  assert.equal(result.title, 'Curso de informática');
+  assert.equal(result.status, 'Pendente');
+  assert.deepEqual(calls[0], ['cursoLocal.create', {
+    nome: 'Curso de informática',
+    descricao: 'Noções básicas.',
+    categoria: 'Tecnologia',
+    dataInicio: new Date('2026-12-01T00:00:00.000Z'),
+    dataTermino: new Date('2026-12-15T00:00:00.000Z'),
+  }]);
+});
+
+test('POST /courses rejects invalid date ranges', async () => {
+  const response = await fetch(`${baseUrl}/courses`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ title: 'Curso', description: 'Descrição', startDate: '2026-12-20', endDate: '2026-12-01' }),
+  });
+  assert.equal(response.status, 400);
+});
+
+test('GET /jobs returns frontend fields and pending moderation state', async () => {
+  calls.length = 0;
+  const response = await fetch(`${baseUrl}/jobs`);
+  const jobs = await response.json();
+
+  assert.equal(response.status, 200);
+  assert.equal(jobs[0].title, jobRecord.titulo);
+  assert.equal(jobs[0].company, jobRecord.empresa);
+  assert.equal(jobs[0].requirements, jobRecord.requisitos);
+  assert.equal(jobs[0].status, 'Pendente');
+  assert.deepEqual(calls[0], ['vagaEmprego.findMany', { orderBy: { dataPublicacao: 'desc' } }]);
+});
+
+test('POST /jobs persists required details and defaults moderation to pending', async () => {
+  calls.length = 0;
+  const response = await fetch(`${baseUrl}/jobs`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      title: '  Auxiliar de estoque ',
+      company: ' Mercado local ',
+      description: '  Organizar produtos. ',
+      requirements: '  Ensino médio. ',
+    }),
+  });
+  const result = await response.json();
+
+  assert.equal(response.status, 201);
+  assert.equal(result.status, 'Pendente');
+  assert.deepEqual(calls[0], ['vagaEmprego.create', {
+    titulo: 'Auxiliar de estoque',
+    descricao: 'Organizar produtos.',
+    requisitos: 'Ensino médio.',
+    empresa: 'Mercado local',
+  }]);
+});
+
+test('POST /jobs rejects missing requirements', async () => {
+  const response = await fetch(`${baseUrl}/jobs`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ title: 'Auxiliar', description: 'Descrição' }),
+  });
+  assert.equal(response.status, 400);
 });
 
 test('database failures return HTTP 500 without exposing internal errors', async () => {
