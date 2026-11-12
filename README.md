@@ -21,6 +21,7 @@ No Render, conecte o repositório `backend-projectieqcachoeira`; use `npm instal
 
 ## Endpoints
 
+- `GET /dashboard/summary` — retorna contagens de membros ativos, eventos do mês UTC, triagens pendentes e voluntários distintos com escala futura, mais os três próximos eventos e quatro atividades recentes.
 - `GET /events` — eventos em ordem crescente de data.
 - `POST /events` — cria um evento com `title`, `date` e `location`.
 - `GET /activities` — até 10 atividades, da mais recente para a mais antiga.
@@ -35,4 +36,4 @@ No Render, conecte o repositório `backend-projectieqcachoeira`; use `npm instal
 
 Os endpoints de criação validam os campos obrigatórios e respondem com `400` quando os dados são inválidos. Erros de banco são registrados pelo servidor e respondidos com `500`.
 
-O relacionamento de triagem usa o campo `Member.id` existente (UUID/String), em vez de alterar a chave de membros persistidos para `Int`. Depois de implantar uma nova migration, aplique-a ao banco de destino com `npx prisma migrate deploy` antes de iniciar a versão que usa os novos modelos.
+Membros novos usam status `Ativo` por padrão; `POST /members` aceita `Ativo` ou `Inativo`. O relacionamento de triagem usa o campo `Member.id` existente (UUID/String), em vez de alterar a chave de membros persistidos para `Int`. Depois de implantar uma nova migration, aplique-a ao banco de destino com `npx prisma migrate deploy` antes de iniciar a versão que usa os novos modelos.

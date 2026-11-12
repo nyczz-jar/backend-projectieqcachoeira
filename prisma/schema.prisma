@@ -27,6 +27,7 @@ model Member {
   name         String
   email        String          @unique
   role         String
+  status       String          @default("Ativo")
   createdAt    DateTime        @default(now())
   socialTriages TriagemSocial[]
 }

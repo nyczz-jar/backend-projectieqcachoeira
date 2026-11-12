@@ -67,6 +67,55 @@ function createApp(prismaClient = prisma) {
     res.json({ status: 'Backend a funcionar perfeitamente!' });
   });
 
+  app.get('/dashboard/summary', async (_req, res) => {
+    const now = new Date();
+    const monthStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
+    const nextMonthStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1));
+
+    try {
+      const [
+        membrosAtivos,
+        eventosMes,
+        triagensPendentes,
+        escalasFuturas,
+        proximosEventos,
+        atividadesRecentes,
+      ] = await Promise.all([
+        prismaClient.member.count({ where: { status: 'Ativo' } }),
+        prismaClient.event.count({ where: { date: { gte: monthStart, lt: nextMonthStart } } }),
+        prismaClient.triagemSocial.count({ where: { statusEncaminhamento: 'Pendente' } }),
+        prismaClient.scale.findMany({
+          where: { date: { gte: now } },
+          select: { volunteer: true },
+          distinct: ['volunteer'],
+        }),
+        prismaClient.event.findMany({
+          where: { date: { gte: now } },
+          orderBy: { date: 'asc' },
+          take: 3,
+        }),
+        prismaClient.activity.findMany({
+          orderBy: { createdAt: 'desc' },
+          take: 4,
+        }),
+      ]);
+
+      return res.json({
+        metricas: {
+          membrosAtivos,
+          eventosMes,
+          triagensPendentes,
+          voluntariosEscalados: escalasFuturas.length,
+        },
+        proximosEventos,
+        atividadesRecentes,
+      });
+    } catch (error) {
+      console.error('[GET /dashboard/summary] Failed to fetch dashboard summary:', error);
+      return res.status(500).json({ error: 'Não foi possível buscar o resumo do dashboard.' });
+    }
+  });
+
   app.get('/events', async (_req, res) => {
     try {
       const events = await prismaClient.event.findMany({
@@ -168,8 +217,11 @@ function createApp(prismaClient = prisma) {
 
   app.post('/members', async (req, res) => {
     try {
-      const { name, email, role } = req.body;
-      const member = await prismaClient.member.create({ data: { name, email, role } });
+      const { name, email, role, status = 'Ativo' } = req.body;
+      if (!['Ativo', 'Inativo'].includes(status)) {
+        return res.status(400).json({ error: 'O status do membro deve ser Ativo ou Inativo.' });
+      }
+      const member = await prismaClient.member.create({ data: { name, email, role, status } });
       res.status(201).json(member);
     } catch (error) {
       res.status(500).json({ error: 'Não foi possível criar o membro.' });

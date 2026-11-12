@@ -53,10 +53,15 @@ const jobRecord = {
 
 const prisma = {
   event: {
+    count: async (args) => {
+      if (failDatabaseRequests) throw new Error('Database unavailable');
+      calls.push(['event.count', args]);
+      return 2;
+    },
     findMany: async (args) => {
       if (failDatabaseRequests) throw new Error('Database unavailable');
       calls.push(['event.findMany', args]);
-      return [{ id: 'event-1', title: 'Culto', date: '2026-11-01T18:00:00.000Z', location: 'Templo' }];
+      return [{ id: 'event-1', title: 'Culto', date: new Date(Date.now() + 86400000), location: 'Templo' }];
     },
     create: async ({ data }) => {
       if (failDatabaseRequests) throw new Error('Database unavailable');
@@ -98,6 +103,16 @@ const prisma = {
     },
   },
   member: {
+    count: async (args) => {
+      if (failDatabaseRequests) throw new Error('Database unavailable');
+      calls.push(['member.count', args]);
+      return 8;
+    },
+    create: async ({ data }) => {
+      if (failDatabaseRequests) throw new Error('Database unavailable');
+      calls.push(['member.create', data]);
+      return { id: 'new-member-uuid', ...data };
+    },
     findUnique: async ({ where }) => {
       if (failDatabaseRequests) throw new Error('Database unavailable');
       calls.push(['member.findUnique', where]);
@@ -105,6 +120,11 @@ const prisma = {
     },
   },
   triagemSocial: {
+    count: async (args) => {
+      if (failDatabaseRequests) throw new Error('Database unavailable');
+      calls.push(['triagemSocial.count', args]);
+      return 3;
+    },
     findMany: async (args) => {
       if (failDatabaseRequests) throw new Error('Database unavailable');
       calls.push(['triagemSocial.findMany', args]);
@@ -124,6 +144,13 @@ const prisma = {
         throw error;
       }
       return { ...socialCaseRecord, ...data, membro: { name: memberRecord.name } };
+    },
+  },
+  scale: {
+    findMany: async (args) => {
+      if (failDatabaseRequests) throw new Error('Database unavailable');
+      calls.push(['scale.findMany', args]);
+      return [{ volunteer: 'Ana' }, { volunteer: 'Carlos' }];
     },
   },
   cursoLocal: {
@@ -156,6 +183,87 @@ before(async () => {
   server = createApp(prisma).listen(0, '127.0.0.1');
   await once(server, 'listening');
   baseUrl = `http://127.0.0.1:${server.address().port}`;
+});
+
+test('GET /dashboard/summary returns current database metrics and recent records', async () => {
+  calls.length = 0;
+  const response = await fetch(`${baseUrl}/dashboard/summary`);
+  const summary = await response.json();
+  const now = new Date();
+  const monthStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
+  const nextMonthStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1));
+
+  assert.equal(response.status, 200);
+  assert.deepEqual(summary.metricas, {
+    membrosAtivos: 8,
+    eventosMes: 2,
+    triagensPendentes: 3,
+    voluntariosEscalados: 2,
+  });
+  assert.equal(summary.proximosEventos[0].title, 'Culto');
+  assert.equal(summary.atividadesRecentes[0].description, 'Novo membro');
+  assert.deepEqual(calls.find(([name]) => name === 'member.count')[1], { where: { status: 'Ativo' } });
+  assert.deepEqual(calls.find(([name]) => name === 'event.count')[1], {
+    where: { date: { gte: monthStart, lt: nextMonthStart } },
+  });
+  assert.deepEqual(calls.find(([name]) => name === 'triagemSocial.count')[1], {
+    where: { statusEncaminhamento: 'Pendente' },
+  });
+  const scaleQuery = calls.find(([name]) => name === 'scale.findMany')[1];
+  assert.ok(scaleQuery.where.date.gte instanceof Date);
+  assert.deepEqual(scaleQuery.select, { volunteer: true });
+  assert.deepEqual(scaleQuery.distinct, ['volunteer']);
+  const nextEventsQuery = calls.find(([name]) => name === 'event.findMany')[1];
+  assert.ok(nextEventsQuery.where.date.gte instanceof Date);
+  assert.deepEqual(nextEventsQuery.orderBy, { date: 'asc' });
+  assert.equal(nextEventsQuery.take, 3);
+  assert.deepEqual(calls.find(([name]) => name === 'activity.findMany')[1], {
+    orderBy: { createdAt: 'desc' },
+    take: 4,
+  });
+});
+
+test('POST /members persists an active status by default and rejects unknown statuses', async () => {
+  calls.length = 0;
+  const response = await fetch(`${baseUrl}/members`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ name: 'Novo membro', email: 'novo@example.com', role: 'Membro' }),
+  });
+  const member = await response.json();
+
+  assert.equal(response.status, 201);
+  assert.equal(member.status, 'Ativo');
+  assert.deepEqual(calls[0], ['member.create', {
+    name: 'Novo membro',
+    email: 'novo@example.com',
+    role: 'Membro',
+    status: 'Ativo',
+  }]);
+
+  const invalidResponse = await fetch(`${baseUrl}/members`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ name: 'Outro', email: 'outro@example.com', role: 'Membro', status: 'Suspenso' }),
+  });
+  assert.equal(invalidResponse.status, 400);
+});
+
+test('GET /dashboard/summary reports database failures as HTTP 500', async () => {
+  const originalConsoleError = console.error;
+  console.error = () => {};
+  failDatabaseRequests = true;
+
+  try {
+    const response = await fetch(`${baseUrl}/dashboard/summary`);
+    const body = await response.json();
+    assert.equal(response.status, 500);
+    assert.equal(body.error, 'Não foi possível buscar o resumo do dashboard.');
+    assert.doesNotMatch(JSON.stringify(body), /Database unavailable/);
+  } finally {
+    failDatabaseRequests = false;
+    console.error = originalConsoleError;
+  }
 });
 
 after(async () => {
